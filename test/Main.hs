@@ -1,4 +1,5 @@
 {-# language DataKinds #-}
+{-# language OverloadedStrings #-}
 {-# language TemplateHaskell #-}
 
 module Main (main) where
@@ -12,6 +13,26 @@ import qualified Data.Map as Map
 
 import Data.Set (Set)
 import qualified Data.Set as Set
+
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as ByteString
+
+main :: IO ()
+main = pure ()
+
+--foogle :: Refined EmptyList ByteString
+--foogle = $$(refineTH "")
+
+-- this will fail to compile
+--badoogle :: Refined (Or Descending Ascending) [Int]
+--badoogle = $$(refineTH [1,2,3,2])
+
+boggle :: Refined (Or Descending Ascending) (Set Int)
+boggle = $$(refineTH (Set.fromList [1,2,3,4]))
+
+-- this will fail to compile
+--hoggle :: Refined Descending (Set Int)
+--hoggle = $$(refineTH (Set.fromList [1,2,3,4]))
 
 baz :: Refined NonEmpty (Set Int)
 baz = $$(refineTH (Set.singleton 0))

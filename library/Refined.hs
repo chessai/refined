@@ -9,7 +9,9 @@ module Refined
 
   , Size
   , NonEmpty
-  
+  , Ascending
+  , Descending
+
   , Not
   , And
   , Or

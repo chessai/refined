@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveLift                 #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
@@ -15,6 +16,7 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-| This module is internal.
  - It exports the newtype constructor for 'Refined',
@@ -33,6 +35,8 @@ module Refined.Internal
 
   , Size
   , NonEmpty
+  , Ascending
+  , Descending
 
   , Not
   , And
@@ -61,10 +65,12 @@ import Data.Maybe (maybe)
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (Semigroup(..))
 import Data.Typeable (Typeable)
+import GHC.Exts (IsList(..))
 import GHC.Generics (Generic, Generic1)
 import GHC.TypeLits
 import Text.Show (showString)
 
+import qualified Data.List as List
 import qualified Language.Haskell.TH.Syntax as TH
 
 import Refined.Orphan ()
@@ -184,14 +190,58 @@ class Predicate p x where
 -- * Rules
 -------------------------
 
+-- |
+-- A predicate that checks whether or not something with an
+-- 'IsList' instance is in ascending order.
+data Ascending
+
+instance (IsList t, Ord (Item t)) => Predicate Ascending t where
+  validate _ x =
+    if (List.sort (toList x) == (toList x))
+      then Nothing
+      else Just ("List is not in ascending order")
+
+-- |
+-- A predicate that checks whether or not something with an
+-- 'IsList' instance is in descending order.
+data Descending
+
+instance (IsList t, Ord (Item t)) => Predicate Descending t where
+  validate _ x =
+    if (List.reverse (List.sort (toList x)) == toList x)
+      then Nothing
+      else Just ("List is not in descending order")
+
+-- |
+-- A predicate that checks whether or not the length of something
+-- with an 'IsList' instance is equal to n.
+data LengthList (n :: Nat)
+
+type EmptyList = LengthList 0
+
+instance (IsList t, KnownNat n) => Predicate (LengthList n) t where
+  validate p x =
+    if l == fromIntegral x'
+      then Nothing
+      else Just ("List's length is not equal to " <> show x' <> ". Length is: " <> show l)
+    where
+      l = length (toList x) 
+      x' = natVal p
+
+-- |
+-- A predicate that checks whether or not a given 'Foldable'
+-- is empty.
 data NonEmpty
 
 instance (Foldable t) => Predicate NonEmpty (t a) where
   validate _ x =
-    if length x == 0
+    if null x
       then Just ("Foldable is not nonempty. Size is: " <> show (length x))
       else Nothing
 
+-- |
+-- A predicate that checks whether or not a given 'Foldable'
+-- is a certain size.
 data Size (n :: Nat)
 
 instance (Foldable t, KnownNat n) => Predicate (Size n) (t a) where
