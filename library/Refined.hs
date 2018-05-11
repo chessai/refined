@@ -9,11 +9,14 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+--{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+--{-# LANGUAGE UndecidableInstances #-}
+
 
 module Refined
 (
@@ -55,6 +58,8 @@ import Data.Typeable (Typeable)
 import GHC.Generics (Generic, Generic1)
 import GHC.TypeLits
 import Text.Show (showString)
+--import Unsafe.Coerce (unsafeCoerce)
+
 import qualified Language.Haskell.TH.Syntax as TH
 
 -- |
@@ -68,7 +73,7 @@ newtype Refined p x = Refined x
     , Foldable
     , Functor
     , Generic
-    , Generic1 
+    , Generic1
     , Ord
     , Show
     , Traversable
@@ -109,10 +114,16 @@ instance TH.Lift x => TH.Lift (Refined p x) where
 -- A smart constructor of a 'Refined' value.
 -- Checks the input value at runtime.
 {-# INLINABLE refine #-}
-refine :: forall p x. Predicate p x => x -> Either String (Refined p x)
+refine :: Predicate p x => x -> Either String (Refined p x)
 refine x =
   fix $ \result ->
-    maybe (Right (Refined x)) Left $ validate (const (Proxy :: Proxy p) result) x
+    maybe (Right (Refined x)) Left $
+    validate (predicateByResult result) x
+  where
+    -- A work-around for the type-inference.
+    predicateByResult :: Either String (Refined p x) -> p
+    predicateByResult =
+      const undefined
 
 -- |
 -- Constructs a 'Refined' value with checking at compile-time using Template Haskell.
@@ -148,7 +159,7 @@ refineTH =
 -- Extracts the refined value.
 {-# INLINE unrefine #-}
 unrefine :: Refined p x -> x
-unrefine = coerce 
+unrefine = coerce
 
 -- * Predicate
 -------------------------
@@ -162,12 +173,21 @@ class Predicate p x where
   -- producing an error string if the value does not satisfy.
   validate :: p -> x -> Maybe String
 
-instance Predicate p x => Predicate (Proxy p) x where
-  validate _ _ = Nothing
 
 -- * Rules
 -------------------------
 
+data Size (n :: Nat)
+
+type NonEmpty = Size 0
+
+instance (Foldable t, KnownNat n) => Predicate (Size n) (t a) where
+  validate p x =
+    if length x == fromIntegral x'
+      then Just ("Foldable is not of size " <> show x' <> ". Size is: " <> show (length x))
+      else Nothing
+    where
+      x' = natVal p
 
 -- ** Logical
 -------------------------
@@ -179,7 +199,7 @@ data Not r
 instance Predicate r x => Predicate (Not r) x where
   validate _ =
     maybe (Just "A subpredicate didn't fail") (const Nothing) .
-    validate (Proxy :: Proxy r)
+    validate (undefined :: r)
 
 -- |
 -- A logical conjunction predicate, composed of two other predicates.
@@ -188,10 +208,10 @@ data And l r
 instance (Predicate l x, Predicate r x) => Predicate (And l r) x where
   validate _ x =
     fmap (showString "The left subpredicate failed with: ") 
-         (validate (Proxy :: Proxy l) x) 
+         (validate (undefined :: l) x) 
       <|>
     fmap (showString "The right subpredicate failed with: ") 
-         (validate (Proxy :: Proxy r) x)
+         (validate (undefined :: r) x)
 
 -- |
 -- A logical disjunction predicate, composed of two other predicates.
@@ -199,10 +219,11 @@ data Or l r
 
 instance (Predicate l x, Predicate r x) => Predicate (Or l r) x where
   validate _ x =
-    case (validate (Proxy :: Proxy l) x, validate (Proxy :: Proxy r) x) of
+    case (validate (undefined :: l) x, validate (undefined :: r) x) of
       (Just a, Just b) -> 
         Just $ "Both subpredicates failed. First with: " <> a <> ". Second with: " <> b <> "."
-      _ -> Nothing
+      _ -> 
+        Nothing
 
 
 -- ** Numeric
@@ -306,26 +327,4 @@ type NonNegative =
 type ZeroToOne =
   FromTo 0 1
 
--- | A typeclass allowing for conversions between predicates,
--- where the target is weaker than the source: that is, all values
--- that satisfy the target predicate will be guaranteed to satisfy
--- the second.
---
--- This typeclass is only safe to use if 'weaken' is safe to use
-class Weaken from to where
-  weaken :: Refined from a -> Refined to a
-  weaken = coerce
 
-instance Weaken (And p p') p
-instance Weaken (And p p') p'
-instance Weaken p (Or p p')
-instance Weaken p (Or p' p)
-instance (n <= m) => Weaken (LessThan n) (LessThan m)
-instance (n <= m) => Weaken (LessThan n) (To m)
-instance (n <= m) => Weaken (To n) (To m)
-instance (m <= n) => Weaken (GreaterThan n) (GreaterThan m)
-instance (m <= n) => Weaken (GreaterThan n) (From m)
-instance (m <= n) => Weaken (From n) (From m)
-instance (p <= n, m <= q) => Weaken (FromTo n m) (FromTo p q)
-instance (p <= n) => Weaken (FromTo n m) (From p)
-instance (m <= q) => Weaken (FromTo n m) (To q)
