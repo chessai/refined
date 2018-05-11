@@ -27,6 +27,9 @@ module Refined
   -- * Predicate Interface
   Predicate(..),
   -- * Standard Predicates
+  -- ** Foldable stuff?
+  Size,
+  NonEmpty,
   -- ** Logical
   Not,
   And,
