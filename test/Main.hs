@@ -1,9 +1,7 @@
 {-# language DataKinds #-}
 {-# language TemplateHaskell #-}
 
-{-| A good use of Refined, with foldl1, which
- - cannot handle empty lists.
--}
+module Main (main) where
 
 import Refined
 import Control.Monad (guard)
@@ -11,6 +9,16 @@ import Data.List (replicate)
 
 import Data.Map (Map)
 import qualified Data.Map as Map
+
+import Data.Set (Set)
+import qualified Data.Set as Set
+
+baz :: Refined NonEmpty (Set Int)
+baz = $$(refineTH (Set.singleton 0))
+
+-- this will fail to compile
+--baz' :: Refined NonEmpty (Set Int)
+--baz' = $$(refineTH (Set.empty))
 
 bar :: Refined NonEmpty (Map Int Int)
 bar = $$(refineTH (Map.singleton 0 1))
