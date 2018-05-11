@@ -1,3 +1,20 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFoldable     #-}
+{-# LANGUAGE DeriveFunctor      #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveTraversable  #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+
 module Refined
 (
   Refined,
@@ -26,18 +43,54 @@ module Refined
 )
 where
 
-import BasePrelude
+import Control.Applicative
+import Data.Coerce (coerce)
+import Data.Data (Data)
+import Data.Either (either)
+import Data.Function (fix)
+import Data.Maybe (maybe)
+import Data.Proxy (Proxy(..))
+import Data.Semigroup (Semigroup(..))
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic, Generic1)
 import GHC.TypeLits
+import Text.Show (showString)
 import qualified Language.Haskell.TH.Syntax as TH
-
 
 -- |
 -- A refinement type, 
 -- which wraps a value of type @x@,
 -- ensuring that it satisfies a type-level predicate @p@.
-newtype Refined p x =
-  Refined x
-  deriving (Show, Eq, Ord, Typeable, Data, Generic)
+newtype Refined p x = Refined x
+  deriving
+    ( Data
+    , Eq
+    , Foldable
+    , Functor
+    , Generic
+    , Generic1 
+    , Ord
+    , Show
+    , Traversable
+    , Typeable
+    )
+
+type role Refined phantom representational
+
+instance Semigroup a => Semigroup (Refined p a) where
+  (<>) = liftA2 (<>)
+
+instance Monoid a => Monoid (Refined p a) where
+  mempty = Refined mempty
+  mappend = liftA2 mappend
+
+instance Applicative (Refined p) where
+  pure = Refined
+  Refined f <*> Refined a = Refined (f a)
+
+instance Monad (Refined p) where
+  return = Refined
+  (Refined x) >>= inj = inj x
 
 instance (Read x, Predicate p x) => Read (Refined p x) where
   readsPrec d =
@@ -56,16 +109,10 @@ instance TH.Lift x => TH.Lift (Refined p x) where
 -- A smart constructor of a 'Refined' value.
 -- Checks the input value at runtime.
 {-# INLINABLE refine #-}
-refine :: Predicate p x => x -> Either String (Refined p x)
+refine :: forall p x. Predicate p x => x -> Either String (Refined p x)
 refine x =
   fix $ \result ->
-    maybe (Right (Refined x)) Left $
-    validate (predicateByResult result) x
-  where
-    -- A work-around for the type-inference.
-    predicateByResult :: Either String (Refined p x) -> p
-    predicateByResult =
-      const undefined
+    maybe (Right (Refined x)) Left $ validate (const (Proxy :: Proxy p) result) x
 
 -- |
 -- Constructs a 'Refined' value with checking at compile-time using Template Haskell.
@@ -101,9 +148,7 @@ refineTH =
 -- Extracts the refined value.
 {-# INLINE unrefine #-}
 unrefine :: Refined p x -> x
-unrefine =
-  unsafeCoerce
-  
+unrefine = coerce 
 
 -- * Predicate
 -------------------------
@@ -117,6 +162,8 @@ class Predicate p x where
   -- producing an error string if the value does not satisfy.
   validate :: p -> x -> Maybe String
 
+instance Predicate p x => Predicate (Proxy p) x where
+  validate _ _ = Nothing
 
 -- * Rules
 -------------------------
@@ -132,7 +179,7 @@ data Not r
 instance Predicate r x => Predicate (Not r) x where
   validate _ =
     maybe (Just "A subpredicate didn't fail") (const Nothing) .
-    validate (undefined :: r)
+    validate (Proxy :: Proxy r)
 
 -- |
 -- A logical conjunction predicate, composed of two other predicates.
@@ -141,10 +188,10 @@ data And l r
 instance (Predicate l x, Predicate r x) => Predicate (And l r) x where
   validate _ x =
     fmap (showString "The left subpredicate failed with: ") 
-         (validate (undefined :: l) x) 
+         (validate (Proxy :: Proxy l) x) 
       <|>
     fmap (showString "The right subpredicate failed with: ") 
-         (validate (undefined :: r) x)
+         (validate (Proxy :: Proxy r) x)
 
 -- |
 -- A logical disjunction predicate, composed of two other predicates.
@@ -152,11 +199,10 @@ data Or l r
 
 instance (Predicate l x, Predicate r x) => Predicate (Or l r) x where
   validate _ x =
-    case (validate (undefined :: l) x, validate (undefined :: r) x) of
+    case (validate (Proxy :: Proxy l) x, validate (Proxy :: Proxy r) x) of
       (Just a, Just b) -> 
         Just $ "Both subpredicates failed. First with: " <> a <> ". Second with: " <> b <> "."
-      _ -> 
-        Nothing
+      _ -> Nothing
 
 
 -- ** Numeric
@@ -259,3 +305,27 @@ type NonNegative =
 -- A range of values from zero to one, including both.
 type ZeroToOne =
   FromTo 0 1
+
+-- | A typeclass allowing for conversions between predicates,
+-- where the target is weaker than the source: that is, all values
+-- that satisfy the target predicate will be guaranteed to satisfy
+-- the second.
+--
+-- This typeclass is only safe to use if 'weaken' is safe to use
+class Weaken from to where
+  weaken :: Refined from a -> Refined to a
+  weaken = coerce
+
+instance Weaken (And p p') p
+instance Weaken (And p p') p'
+instance Weaken p (Or p p')
+instance Weaken p (Or p' p)
+instance (n <= m) => Weaken (LessThan n) (LessThan m)
+instance (n <= m) => Weaken (LessThan n) (To m)
+instance (n <= m) => Weaken (To n) (To m)
+instance (m <= n) => Weaken (GreaterThan n) (GreaterThan m)
+instance (m <= n) => Weaken (GreaterThan n) (From m)
+instance (m <= n) => Weaken (From n) (From m)
+instance (p <= n, m <= q) => Weaken (FromTo n m) (FromTo p q)
+instance (p <= n) => Weaken (FromTo n m) (From p)
+instance (m <= q) => Weaken (FromTo n m) (To q)
