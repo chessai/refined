@@ -41,9 +41,9 @@ library
     library
   exposed-modules:
     Refined
-    Refined.Internal
   other-modules:
     Refined.Orphan
+    Refined.PrettyPrinter 
   ghc-options:
     -funbox-strict-fields
   default-language:
