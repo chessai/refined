@@ -72,7 +72,9 @@ module Refined.Internal
     -- * Logical predicates
   , Not
   , And
+  , type (&&)
   , Or
+  , type (||)
 
     -- * Numeric predicates
   , LessThan
@@ -317,6 +319,10 @@ instance (Predicate p x, Typeable p) => Predicate (Not p) x where
 -- | The conjunction of two predicates.
 data And l r
 
+infixr 3 &&
+-- | The conjunction of two predicates.
+type (&&) = And
+
 -- | FIXME: doc
 instance ( Predicate l x, Predicate r x, Typeable l, Typeable r
          ) => Predicate (And l r) x where
@@ -333,6 +339,10 @@ instance ( Predicate l x, Predicate r x, Typeable l, Typeable r
 
 -- | The disjunction of two predicates.
 data Or l r
+
+infixr 2 ||
+-- | The disjunction of two predicates.
+type (||) = Or
 
 -- | FIXME: doc
 instance ( Predicate l x, Predicate r x, Typeable l, Typeable r
