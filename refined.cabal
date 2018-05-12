@@ -19,6 +19,8 @@ maintainer:
   Nikita Volkov <nikita.y.volkov@mail.ru>
 copyright:
   (c) 2015, Nikita Volkov
+  (c) 2018, Remy Goldschmidt
+  (c) 2018, Daniel Cartwright
 license:
   MIT
 license-file:
@@ -49,7 +51,13 @@ library
   build-depends:
       base >= 4.7 && < 5
     , containers
+    , exceptions 
+    , mtl 
+    , prettyprinter
+    , prettyprinter-ansi-terminal
     , template-haskell >= 2.9 && < 3
+    , text 
+    , transformers
 
 test-suite test
   type: exitcode-stdio-1.0

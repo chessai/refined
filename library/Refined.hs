@@ -7,11 +7,6 @@ module Refined
   , Predicate(..)
   , Weaken(..)
 
-  , Size
-  , NonEmpty
-  , Ascending
-  , Descending
-
   , Not
   , And
   , Or
